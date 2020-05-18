@@ -4,6 +4,7 @@
 use crate::{prelude::*, LintContext};
 use guppy::graph::{PackageGraph, PackageMetadata};
 use std::path::Path;
+use x_core::{DebugIgnore, WorkspaceSubset};
 
 /// Represents a linter that runs once per package.
 pub trait PackageLinter: Linter {
@@ -21,9 +22,9 @@ pub struct PackageContext<'l> {
     // PackageContext requires the package graph to be computed and available, though ProjectContext
     // does not.
     package_graph: &'l PackageGraph,
+    default_members: DebugIgnore<&'l WorkspaceSubset<'l>>,
     workspace_path: &'l Path,
     metadata: PackageMetadata<'l>,
-    is_default_member: bool,
 }
 
 impl<'l> PackageContext<'l> {
@@ -33,13 +34,13 @@ impl<'l> PackageContext<'l> {
         workspace_path: &'l Path,
         metadata: PackageMetadata<'l>,
     ) -> Result<Self> {
-        let default_members = project_ctx.default_workspace_members()?;
+        let default_members = project_ctx.default_members()?;
         Ok(Self {
             project_ctx,
             package_graph,
+            default_members: DebugIgnore(default_members),
             workspace_path,
             metadata,
-            is_default_member: default_members.contains(metadata.id()),
         })
     }
 
@@ -63,9 +64,14 @@ impl<'l> PackageContext<'l> {
         &self.metadata
     }
 
-    /// Returns true if this is a default member of this workspace.
+    /// Returns information about the default members in this workspace.
+    pub fn default_members(&self) -> &'l WorkspaceSubset<'l> {
+        &self.default_members.0
+    }
+
+    /// Returns true if this member of this workspace is built by default.
     pub fn is_default_member(&self) -> bool {
-        self.is_default_member
+        self.default_members.contains(self.metadata.id())
     }
 }
 
