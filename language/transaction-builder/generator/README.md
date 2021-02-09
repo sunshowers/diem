@@ -62,8 +62,10 @@ target/debug/generate-transaction-builders \
 ```
 Next, you may copy and execute the [Python demo file](examples/python3/stdlib_demo.py) with:
 ```bash
-cp language/transaction-builder/generator/examples/python3/stdlib_demo.py "$DEST"
-PYTHONPATH="$PYTHONPATH:$DEST" python3 "$DEST/stdlib_demo.py"
+cp -R language/transaction-builder/generator/examples/python3/* "$DEST"
+cd "$DEST"
+poetry install --no-dev --quiet
+poetry run python stdlib_demo.py
 ```
 
 ### C++
