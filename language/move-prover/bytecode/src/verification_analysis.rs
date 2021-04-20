@@ -10,7 +10,7 @@ use crate::{
     usage_analysis,
 };
 use log::debug;
-use move_model::model::{FunctionEnv, GlobalEnv, QualifiedId, StructId, VerificationScope};
+use move_model::model::{FunctionEnv, GlobalEnv, QualifiedInstId, StructId, VerificationScope};
 use std::collections::BTreeSet;
 
 /// The annotation for information about verification.
@@ -86,8 +86,8 @@ impl FunctionTargetProcessor for VerificationAnalysisProcessor {
         // be mutated, as per pipeline processor design. We put it back temporarily to have
         // a unique model of targets.
         let fid = fun_env.get_qualified_id();
-        let variant = data.variant;
-        targets.insert_target_data(&fid, variant, data);
+        let variant = data.variant.clone();
+        targets.insert_target_data(&fid, variant.clone(), data);
 
         // Check the friend relation.
         check_friend_relation(fun_env);
@@ -98,14 +98,17 @@ impl FunctionTargetProcessor for VerificationAnalysisProcessor {
             let is_explicitly_verified =
                 fun_env.module_env.is_target() && fun_env.should_verify(&options.verify_scope);
             if options.verify_scope.is_exclusive() {
+                // If the verification is set exclusive to function or module, don't add friends
+                // for verification.
                 is_explicitly_verified
             } else {
                 // Get all memory mentioned in the invariants in target modules
                 let target_memory = get_target_invariant_memory(fun_env.module_env.env);
 
                 // Get all memory modified by this function.
-                let fun_target = targets.get_target(fun_env, variant);
-                let modified_memory = usage_analysis::get_directly_modified_memory(&fun_target);
+                let fun_target = targets.get_target(fun_env, &variant);
+                let modified_memory =
+                    usage_analysis::get_directly_modified_memory_inst(&fun_target);
 
                 // This function needs to be verified if it is a target or it touches target memory.
                 is_explicitly_verified || !modified_memory.is_disjoint(&target_memory)
@@ -113,10 +116,10 @@ impl FunctionTargetProcessor for VerificationAnalysisProcessor {
         };
         if is_verified {
             debug!("marking `{}` to be verified", fun_env.get_full_name_str());
-            mark_verified(fun_env, variant, targets, &options);
+            mark_verified(fun_env, &variant, targets, &options);
         }
 
-        targets.remove_target_data(&fid, variant)
+        targets.remove_target_data(&fid, &variant)
     }
 
     fn name(&self) -> String {
@@ -154,12 +157,12 @@ fn check_friend_relation(fun_env: &FunctionEnv<'_>) {
 
 /// Compute the set of resources which are used in invariants which are target of
 /// verification.
-fn get_target_invariant_memory(env: &GlobalEnv) -> BTreeSet<QualifiedId<StructId>> {
+fn get_target_invariant_memory(env: &GlobalEnv) -> BTreeSet<QualifiedInstId<StructId>> {
     let mut target_resources = BTreeSet::new();
     for module_env in env.get_modules() {
         if module_env.is_target() {
             let module_id = module_env.get_id();
-            let mentioned_resources: BTreeSet<QualifiedId<StructId>> = env
+            let mentioned_resources: BTreeSet<QualifiedInstId<StructId>> = env
                 .get_global_invariants_by_module(module_id)
                 .iter()
                 .flat_map(|id| env.get_global_invariant(*id).unwrap().mem_usage.clone())
@@ -175,7 +178,7 @@ fn get_target_invariant_memory(env: &GlobalEnv) -> BTreeSet<QualifiedId<StructId
 /// indirectly called by this function as inlined if they are not opaque.
 fn mark_verified(
     fun_env: &FunctionEnv<'_>,
-    variant: FunctionVariant,
+    variant: &FunctionVariant,
     targets: &mut FunctionTargetsHolder,
     options: &ProverOptions,
 ) {
@@ -186,8 +189,6 @@ fn mark_verified(
         mark_inlined(fun_env, variant, targets);
     }
     // The user can override with `pragma verify = false` to verify the friend, so respect this.
-    // However, if this is not a friend, the caller has already made the decision whether to
-    // verify or not.
     if !actual_env.is_explicitly_not_verified(&options.verify_scope) {
         let mut info = targets
             .get_data_mut(&actual_env.get_qualified_id(), variant)
@@ -205,7 +206,7 @@ fn mark_verified(
 /// directly or indirectly from a verified function.
 fn mark_inlined(
     fun_env: &FunctionEnv<'_>,
-    variant: FunctionVariant,
+    variant: &FunctionVariant,
     targets: &mut FunctionTargetsHolder,
 ) {
     if fun_env.is_native() || fun_env.is_intrinsic() {
@@ -230,7 +231,7 @@ fn mark_inlined(
 /// Continue transitively marking callees as inlined.
 fn mark_callees_inlined(
     fun_env: &FunctionEnv<'_>,
-    variant: FunctionVariant,
+    variant: &FunctionVariant,
     targets: &mut FunctionTargetsHolder,
 ) {
     for callee in fun_env.get_called_functions() {

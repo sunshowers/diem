@@ -6,7 +6,7 @@ use itertools::Itertools;
 use move_model::{
     ast::{Exp, MemoryLabel, TempIndex},
     exp_rewriter::{ExpRewriter, RewriteTarget},
-    model::{FunId, ModuleId, NodeId, QualifiedId, SpecVarId, StructId},
+    model::{FunId, ModuleId, NodeId, QualifiedInstId, SpecVarId, StructId},
     ty::{Type, TypeDisplayContext},
 };
 use num::BigUint;
@@ -232,7 +232,7 @@ impl Operation {
 /// A borrow node -- used in memory operations.
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub enum BorrowNode {
-    GlobalRoot(QualifiedId<StructId>),
+    GlobalRoot(QualifiedInstId<StructId>),
     LocalRoot(TempIndex),
     Reference(TempIndex),
 }
@@ -254,7 +254,7 @@ impl BorrowNode {
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub enum StrongEdge {
     Direct,
-    Field(usize),
+    Field(QualifiedInstId<StructId>, usize),
     FieldUnknown,
 }
 
@@ -302,8 +302,8 @@ pub enum Bytecode {
     Abort(AttrId, TempIndex),
     Nop(AttrId),
 
-    SaveMem(AttrId, MemoryLabel, QualifiedId<StructId>),
-    SaveSpecVar(AttrId, MemoryLabel, QualifiedId<SpecVarId>),
+    SaveMem(AttrId, MemoryLabel, QualifiedInstId<StructId>),
+    SaveSpecVar(AttrId, MemoryLabel, QualifiedInstId<SpecVarId>),
     Prop(AttrId, PropKind, Exp),
 }
 
@@ -631,7 +631,7 @@ impl std::fmt::Display for BorrowEdge {
 impl std::fmt::Display for StrongEdge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StrongEdge::Field(field) => write!(f, "{}", field),
+            StrongEdge::Field(_, field) => write!(f, "{}", field),
             StrongEdge::FieldUnknown => write!(f, "U"),
             StrongEdge::Direct => write!(f, "D"),
         }

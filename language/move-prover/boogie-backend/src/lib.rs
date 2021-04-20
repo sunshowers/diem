@@ -28,7 +28,7 @@ pub mod boogie_wrapper;
 pub mod bytecode_translator;
 pub mod options;
 pub mod prelude_template_helpers;
-mod prover_task_runner;
+pub mod prover_task_runner;
 mod spec_translator;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

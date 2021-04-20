@@ -33,7 +33,7 @@ use move_model::{
     exp_generator::ExpGenerator,
     spec_translator::{SpecTranslator, TranslatedSpec},
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 const REQUIRES_FAILS_MESSAGE: &str = "precondition does not hold at this call";
 const ENSURES_FAILS_MESSAGE: &str = "post-condition does not hold";
@@ -118,7 +118,7 @@ impl FunctionTargetProcessor for SpecInstrumentationProcessor {
             verification_data = Instrumenter::run(&*options, targets, fun_env, verification_data);
             targets.insert_target_data(
                 &fun_env.get_qualified_id(),
-                verification_data.variant,
+                verification_data.variant.clone(),
                 verification_data,
             );
 
@@ -127,7 +127,11 @@ impl FunctionTargetProcessor for SpecInstrumentationProcessor {
                 let mut new_data =
                     data.fork(FunctionVariant::Verification(INCONSISTENCY_CHECK_VARIANT));
                 new_data = Instrumenter::run(&*options, targets, fun_env, new_data);
-                targets.insert_target_data(&fun_env.get_qualified_id(), new_data.variant, new_data);
+                targets.insert_target_data(
+                    &fun_env.get_qualified_id(),
+                    new_data.variant.clone(),
+                    new_data,
+                );
             }
         }
 
@@ -245,10 +249,18 @@ impl<'a> Instrumenter<'a> {
             }
 
             // Inject well-formedness assumption for used memory.
-            for mem in self.get_used_memory() {
+            for mem in usage_analysis::get_used_memory_inst(&self.builder.get_target()).clone() {
+                // If this is native or intrinsic memory, skip this.
+                let struct_env = self
+                    .builder
+                    .global_env()
+                    .get_struct_qid(mem.to_qualified_id());
+                if struct_env.is_native_or_intrinsic() {
+                    continue;
+                }
                 let exp = self
                     .builder
-                    .mk_mem_quant_opt(QuantKind::Forall, mem, &mut |val| {
+                    .mk_inst_mem_quant_opt(QuantKind::Forall, &mem, &mut |val| {
                         Some(self.builder.mk_call(
                             &BOOL_TYPE,
                             ast::Operation::WellFormed,
@@ -273,12 +285,14 @@ impl<'a> Instrumenter<'a> {
             // For the verification variant, we generate post-conditions. Inject any state
             // save instructions needed for this.
             for (mem, label) in &self.spec.saved_memory {
+                let mem = mem.clone();
                 self.builder
-                    .emit_with(|attr_id| SaveMem(attr_id, *label, *mem));
+                    .emit_with(|attr_id| SaveMem(attr_id, *label, mem));
             }
             for (spec_var, label) in &self.spec.saved_spec_vars {
+                let spec_var = spec_var.clone();
                 self.builder
-                    .emit_with(|attr_id| SaveSpecVar(attr_id, *label, *spec_var));
+                    .emit_with(|attr_id| SaveSpecVar(attr_id, *label, spec_var));
             }
             let saved_params = self.spec.saved_params.clone();
             self.emit_save_for_old(&saved_params);
@@ -296,10 +310,6 @@ impl<'a> Instrumenter<'a> {
         if self.can_abort {
             self.generate_abort_block();
         }
-    }
-
-    fn get_used_memory(&self) -> BTreeSet<QualifiedId<StructId>> {
-        usage_analysis::get_used_memory(&self.builder.get_target()).clone()
     }
 
     fn instrument_bytecode(&mut self, bc: Bytecode) {
@@ -814,13 +824,13 @@ fn check_caller_callee_modifies_relation(
     if fun_env.is_native() || fun_env.is_intrinsic() {
         return;
     }
-    let caller_func_target = targets.get_target(&fun_env, FunctionVariant::Baseline);
+    let caller_func_target = targets.get_target(&fun_env, &FunctionVariant::Baseline);
     for callee in fun_env.get_called_functions() {
         let callee_fun_env = env.get_function(callee);
         if callee_fun_env.is_native() || callee_fun_env.is_intrinsic() {
             continue;
         }
-        let callee_func_target = targets.get_target(&callee_fun_env, FunctionVariant::Baseline);
+        let callee_func_target = targets.get_target(&callee_fun_env, &FunctionVariant::Baseline);
         let callee_modified_memory = usage_analysis::get_modified_memory(&callee_func_target);
         for target in caller_func_target.get_modify_targets().keys() {
             if callee_modified_memory.contains(target)
@@ -850,7 +860,7 @@ fn check_opaque_modifies_completeness(
     targets: &FunctionTargetsHolder,
     fun_env: &FunctionEnv,
 ) {
-    let target = targets.get_target(fun_env, FunctionVariant::Baseline);
+    let target = targets.get_target(fun_env, &FunctionVariant::Baseline);
     if !target.is_opaque() {
         return;
     }
@@ -858,16 +868,17 @@ fn check_opaque_modifies_completeness(
     // a modifies clause. Otherwise we could introduce unsoundness.
     // TODO: we currently except Event::EventHandle from this, because this is treated as
     //   an immutable reference. We should find a better way how to deal with event handles.
-    for mem in usage_analysis::get_modified_memory(&target) {
+    for mem in usage_analysis::get_modified_memory_inst(&target) {
         if env.is_wellknown_event_handle_type(&Type::Struct(mem.module_id, mem.id, vec![])) {
             continue;
         }
-        if !target.get_modify_targets().contains_key(mem) {
+        let found = target.get_modify_ids().iter().any(|id| mem == id);
+        if !found {
             let loc = fun_env.get_spec_loc();
             env.error(&loc,
             &format!("function `{}` is opaque but its specification does not have a modifies clause for `{}`",
                 fun_env.get_full_name_str(),
-                env.get_module(mem.module_id).into_struct(mem.id).get_full_name_str())
+                env.display(mem))
             )
         }
     }

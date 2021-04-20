@@ -178,7 +178,7 @@ impl<'env> ModuleTranslator<'env> {
         );
 
         // Emit memory variable.
-        if struct_env.is_resource() {
+        if struct_env.has_memory() {
             let memory_name = boogie_resource_memory_name(
                 struct_env.module_env.env,
                 struct_env.get_qualified_id(),
@@ -211,13 +211,16 @@ impl<'env> ModuleTranslator<'env> {
             let verification_info = verification_analysis::get_info(
                 &self
                     .targets
-                    .get_target(&func_env, FunctionVariant::Baseline),
+                    .get_target(&func_env, &FunctionVariant::Baseline),
             );
             for variant in self.targets.get_target_variants(&func_env) {
                 if verification_info.verified && variant.is_verified()
                     || verification_info.inlined && !variant.is_verified()
                 {
-                    self.translate_function(variant, &self.targets.get_target(&func_env, variant));
+                    self.translate_function(
+                        &variant,
+                        &self.targets.get_target(&func_env, &variant),
+                    );
                 }
             }
         }
@@ -226,7 +229,7 @@ impl<'env> ModuleTranslator<'env> {
 
 impl<'env> ModuleTranslator<'env> {
     /// Translates the given function.
-    fn translate_function(&self, variant: FunctionVariant, fun_target: &FunctionTarget<'_>) {
+    fn translate_function(&self, variant: &FunctionVariant, fun_target: &FunctionTarget<'_>) {
         self.generate_function_sig(variant, &fun_target);
         self.generate_function_body(variant, &fun_target);
         emitln!(self.writer);
@@ -234,7 +237,7 @@ impl<'env> ModuleTranslator<'env> {
 
     /// Return a string for a boogie procedure header. Use inline attribute and name
     /// suffix as indicated by `entry_point`.
-    fn generate_function_sig(&self, variant: FunctionVariant, fun_target: &FunctionTarget<'_>) {
+    fn generate_function_sig(&self, variant: &FunctionVariant, fun_target: &FunctionTarget<'_>) {
         let (args, rets) = self.generate_function_args_and_returns(fun_target);
 
         let (suffix, attribs) = match variant {
@@ -253,7 +256,7 @@ impl<'env> ModuleTranslator<'env> {
                     attribs.push(format!("{{:random_seed {}}} ", seed));
                 };
 
-                if flavor == "inconsistency" {
+                if *flavor == "inconsistency" {
                     attribs.push(format!(
                         "{{:msg_if_verifies \"inconsistency_detected{}\"}} ",
                         self.loc_str(&fun_target.get_loc())
@@ -321,7 +324,7 @@ impl<'env> ModuleTranslator<'env> {
     }
 
     /// Generates boogie implementation body.
-    fn generate_function_body(&self, variant: FunctionVariant, fun_target: &FunctionTarget<'_>) {
+    fn generate_function_body(&self, variant: &FunctionVariant, fun_target: &FunctionTarget<'_>) {
         // Be sure to set back location to the whole function definition as a default.
         self.writer.set_location(&fun_target.get_loc().at_start());
 
@@ -373,7 +376,11 @@ impl<'env> ModuleTranslator<'env> {
             })
             .collect::<BTreeMap<_, _>>();
         for (lab, mem) in labels {
-            let name = boogie_resource_memory_name(self.module_env.env, *mem, &Some(*lab));
+            let name = boogie_resource_memory_name(
+                self.module_env.env,
+                mem.to_qualified_id(),
+                &Some(*lab),
+            );
             emitln!(self.writer, "var {}: $Memory;", name);
         }
 
@@ -514,9 +521,13 @@ impl<'env> ModuleTranslator<'env> {
         match bytecode {
             SpecBlock(..) => panic!("deprecated"),
             SaveMem(_, label, mem) => {
-                let snapshot =
-                    boogie_resource_memory_name(self.module_env.env, *mem, &Some(*label));
-                let current = boogie_resource_memory_name(self.module_env.env, *mem, &None);
+                let snapshot = boogie_resource_memory_name(
+                    self.module_env.env,
+                    mem.to_qualified_id(),
+                    &Some(*label),
+                );
+                let current =
+                    boogie_resource_memory_name(self.module_env.env, mem.to_qualified_id(), &None);
                 emitln!(self.writer, "{} := {};", snapshot, current);
             }
             SaveSpecVar(_, _label, _var) => {
@@ -693,7 +704,7 @@ impl<'env> ModuleTranslator<'env> {
                                     BorrowEdge::Strong(StrongEdge::Direct) => {
                                         ("WritebackToReferenceStrongDirect", "".to_string())
                                     }
-                                    BorrowEdge::Strong(StrongEdge::Field(field)) => {
+                                    BorrowEdge::Strong(StrongEdge::Field(_, field)) => {
                                         ("WritebackToReferenceStrongField", format!(", {}", field))
                                     }
                                     BorrowEdge::Strong(StrongEdge::FieldUnknown) => {
@@ -768,7 +779,7 @@ impl<'env> ModuleTranslator<'env> {
                         let callee_env = self.module_env.env.get_module(*mid).into_function(*fid);
                         let callee_target = self
                             .targets
-                            .get_target(&callee_env, FunctionVariant::Baseline);
+                            .get_target(&callee_env, &FunctionVariant::Baseline);
 
                         let args_str = std::iter::once(boogie_type_values(
                             fun_target.func_env.module_env.env,

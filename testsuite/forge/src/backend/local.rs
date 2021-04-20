@@ -1,7 +1,8 @@
 // Copyright (c) The Diem Core Contributors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::{AdminInfo, Coffer, Factory, PublicInfo, Swarm};
+use crate::{AdminInfo, Coffer, Factory, FullNode, NodeId, PublicInfo, Result, Swarm, Validator};
+use diem_config::config::NodeConfig;
 use diem_sdk::{
     client::BlockingClient,
     transaction_builder::TransactionFactory,
@@ -30,6 +31,58 @@ impl Swarm for LocalSwarm {
                 designated_dealer_account: &mut self.designated_dealer_account,
             },
         )
+    }
+
+    fn health_check(&self) -> Result<()> {
+        todo!()
+    }
+
+    fn validators(&self) -> Box<dyn Iterator<Item = &dyn Validator>> {
+        todo!()
+    }
+
+    fn validators_mut(&self) -> Box<dyn Iterator<Item = &mut dyn Validator>> {
+        todo!()
+    }
+
+    fn validator(&self, _id: NodeId) -> &dyn Validator {
+        todo!()
+    }
+
+    fn validator_mut(&mut self, _id: NodeId) -> &mut dyn Validator {
+        todo!()
+    }
+
+    fn full_nodes(&self) -> Box<dyn Iterator<Item = &dyn FullNode>> {
+        todo!()
+    }
+
+    fn full_nodes_mut(&self) -> Box<dyn Iterator<Item = &mut dyn FullNode>> {
+        todo!()
+    }
+
+    fn full_node(&self) -> &dyn FullNode {
+        todo!()
+    }
+
+    fn full_node_mut(&mut self) -> &mut dyn FullNode {
+        todo!()
+    }
+
+    fn add_validator(&mut self, _config: NodeConfig) -> Result<NodeId> {
+        todo!()
+    }
+
+    fn remove_validator(&mut self, _id: NodeId) -> Result<()> {
+        todo!()
+    }
+
+    fn add_full_node(&mut self, _config: NodeConfig) -> Result<()> {
+        todo!()
+    }
+
+    fn remove_full_node(&mut self) -> Result<()> {
+        todo!()
     }
 }
 
@@ -69,18 +122,21 @@ impl Factory for LocalFactory {
         let root_account = LocalAccount::new(
             diem_sdk::types::account_config::diem_root_address(),
             account_key,
+            0,
         );
         let key = generate_key::load_key(&validator_swarm.config.diem_root_key_path);
         let account_key = AccountKey::from_private_key(key);
         let treasury_compliance_account = LocalAccount::new(
             diem_sdk::types::account_config::treasury_compliance_account_address(),
             account_key,
+            0,
         );
         let key = generate_key::load_key(&validator_swarm.config.diem_root_key_path);
         let account_key = AccountKey::from_private_key(key);
         let designated_dealer_account = LocalAccount::new(
             diem_sdk::types::account_config::testnet_dd_account_address(),
             account_key,
+            0,
         );
 
         validator_swarm.launch();

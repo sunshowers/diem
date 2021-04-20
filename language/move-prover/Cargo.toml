@@ -9,6 +9,7 @@ license = "Apache-2.0"
 [dependencies]
 # diem dependencies
 boogie-backend = { path = "boogie-backend" }
+boogie-backend-exp = { path = "boogie-backend-exp" }
 move-lang = { path = "../move-lang" }
 move-model = { path = "../move-model" }
 docgen = { path = "docgen" }
@@ -41,7 +42,7 @@ tokio = { version = "1.3.0", features = ["full"] }
 toml = "0.5.8"
 
 [dev-dependencies]
-datatest-stable = { path = "../../common/datatest-stable" }
+datatest-stable = "0.1.1"
 move-prover-test-utils = { path = "test-utils" }
 shell-words = "1.0.0"
 walkdir = "2.3.1"

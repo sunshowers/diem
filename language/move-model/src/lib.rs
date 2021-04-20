@@ -61,6 +61,11 @@ pub fn run_model_builder(
     )?;
     let (comment_map, parsed_prog) = match pprog_and_comments_res {
         Err(errors) => {
+            // Add source files so that the env knows how to translate locations of parse errors
+            for fname in files.keys().sorted() {
+                let fsrc = &files[fname];
+                env.add_source(fname, fsrc, /* is_dep */ false);
+            }
             add_move_lang_errors(&mut env, errors);
             return Ok(env);
         }
@@ -228,6 +233,7 @@ fn run_spec_checker(env: &mut GlobalEnv, units: Vec<CompiledUnit>, mut eprog: Pr
                     function_info,
                 } => {
                     let move_lang::expansion::ast::Script {
+                        attributes,
                         loc,
                         function_name,
                         constants,
@@ -256,6 +262,7 @@ fn run_spec_checker(env: &mut GlobalEnv, units: Vec<CompiledUnit>, mut eprog: Pr
                     let mut functions = UniqueMap::new();
                     functions.add(function_name, function).unwrap();
                     let expanded_module = ModuleDefinition {
+                        attributes,
                         loc,
                         dependency_order: usize::MAX,
                         is_source_module: true,
